@@ -3,7 +3,9 @@ MSz source code
 
 # use the following command to compile:
 nvcc -c main.cu -o main.o
+
 g++ -O3 -g -fopenmp -c main.cpp -o main.o
+
 g++ -fopenmp main.o main.o -lcudart -o main
 
 # use the command:
