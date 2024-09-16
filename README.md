@@ -1,6 +1,10 @@
 # MSz-
 MSz source code
 
+# Compiler Requirements
+OpenMP
+CUDA
+
 # use the following command to compile:
 nvcc -c main.cu -o main.o
 
