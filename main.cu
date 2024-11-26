@@ -415,7 +415,7 @@ __global__ void iscriticle(){
         
         int i = threadIdx.x + blockIdx.x * blockDim.x;
         
-        if(i>=num or lowgradientindices[i]==1){
+        if(i>=num){
             
             return;
         }
@@ -575,78 +575,37 @@ __device__ double ULLToDouble(unsigned long long value) {
 
 
 
-// __device__ double atomicCASDouble(double* address, double val) {
-//     // uint64_t* address_as_ull = (uint64_t*)address;
-//     unsigned long long* addr_as_ull = (unsigned long long*)address;
-//     // 将 double 值转换为 uint64_t
-//     unsigned long long old_val_as_ull = doubleToULL(*addr_as_ull);
-//     unsigned long long new_val_as_ull = doubleToULL(val);
-//     // uint64_t old_val_as_ull = *address_as_ull;
-//     // uint64_t new_val_as_ull = __double_as_longlong(val);
-//     // uint64_t assumed;
-
-   
-//     // assumed = old_val_as_ull;
-//     // 使用 atomicCAS 进行原子比较和交换操作
-//     // old_val_as_ull = atomicCAS((unsigned long long int*)address_as_ull, (unsigned long long int)old_val_as_ull, (unsigned long long int)new_val_as_ull);
-//     atomicCAS(addr_as_ull,old_val_as_ull,new_val_as_ull);
-
-//     // 返回交换之前的旧值
-    
-//     return __longlong_as_double(old_val_as_ull);
-// }
-
-// __device__ double atomicCASDouble(double* addr, double expected, double desired) {
-//     // 将double类型的值转换为unsigned long long
-//     unsigned long long* addr_as_ull = (unsigned long long*)addr;
-//     unsigned long long expected_as_ull = doubleToULL(expected);
-//     unsigned long long desired_as_ull = doubleToULL(desired);
-    
-//     // 使用atomicCAS进行原子操作
-//     unsigned long long old_as_ull = atomicCAS(addr_as_ull, expected_as_ull, desired_as_ull);
-    
-//     // 返回旧值，转换回double类型
-//     return ULLToDouble(old_as_ull);
-// }
-
-
 __device__ double atomicCASDouble(double* address, double val) {
-    // 将 double 指针转换为 uint64_t 指针
+   
     uint64_t* address_as_ull = (uint64_t*)address;
-    // 将 double 值转换为 uint64_t
     uint64_t old_val_as_ull = *address_as_ull;
     uint64_t new_val_as_ull = __double_as_longlong(val);
     uint64_t assumed;
 
 
     assumed = old_val_as_ull;
-    // 使用自定义的 atomicCAS 进行原子比较和交换操作
-    // return atomicCAS((unsigned long long int*)address, (unsigned long long int)compare, (unsigned long long int)val);
     
     old_val_as_ull = atomicCAS((unsigned long long int*)address_as_ull, (unsigned long long int)assumed, (unsigned long long int)new_val_as_ull);
-    // } while (assumed != old_val_as_ull);
-
-    // 返回交换之前的旧值
     return __longlong_as_double(old_val_as_ull);
 }
 void saveVectorToBinFile(const std::vector<int>* vecPtr, const std::string& filename) {
     if (vecPtr == nullptr) {
-        std::cerr << "输入的指针为空" << std::endl;
+        std::cerr << "pointer empty" << std::endl;
         return;
     }
 
-    // 打开文件输出流，以二进制模式
+    
     std::ofstream outfile(filename, std::ios::binary);
     if (!outfile) {
-        std::cerr << "无法打开文件 " << filename << " 进行写入" << std::endl;
+        std::cerr << "can not open file " << filename << " to write" << std::endl;
         return;
     }
 
-    // 获取向量的大小并写入文件
+    
     size_t size = vecPtr->size();
     outfile.write(reinterpret_cast<const char*>(&size), sizeof(size));
 
-    // 处理并写入向量的数据
+    
     for (size_t i = 0; i < size; ++i) {
         int value = (*vecPtr)[i];
         if (value == -1) {
@@ -659,7 +618,7 @@ void saveVectorToBinFile(const std::vector<int>* vecPtr, const std::string& file
     }
 
 
-    // 关闭文件
+    
     outfile.close();
 }
 __device__ int swap(int index, double delta){
@@ -667,7 +626,7 @@ __device__ int swap(int index, double delta){
     double oldValue = d_deltaBuffer[index];
     while (update_successful==0) {
         double current_value = d_deltaBuffer[index];
-        if (delta > current_value) {
+        if (-delta > current_value) {
             double swapped = atomicCASDouble(&d_deltaBuffer[index], delta);
             if (swapped == current_value) {
                 update_successful = 1;
@@ -703,246 +662,53 @@ __global__ void fix_maxi_critical1(int direction, int cnt){
     int index;
     int next_vertex;
    
-    if (direction == 0 && index_f<count_f_max && lowgradientindices[all_max[index_f]]==0){
+    if (direction == 0 && index_f<count_f_max){
         
         index = all_max[index_f];
-        // printf("%.17lf %d\n",decp_data[index],index);
+        // if vertex is a regular point.
         if (or_maxi[index]!=-1){
-            // printf("%d\n",index);
-            // find_direction2(1,index);
+            
+            // find its largest neighbor
             
             next_vertex = from_direction_to_index1(index,or_maxi[index]);
             
-            int smallest_vertex = next_vertex;
-            double threshold = -DBL_MAX;
-            
-            
-            for(int j=0;j<12;j++){
-                int i = adjacency[index*12+j];
-                if(i==-1){
-                    break;
-                }
-                if(lowgradientindices[i]==1){
-                    continue;
-                }
-                
-                if(input_data[i]<input_data[index] and input_data[i]>threshold and i!=next_vertex){
-                    smallest_vertex = i;
-                    threshold = input_data[i];
-                }
-            }
-            
-            threshold = decp_data[smallest_vertex];
-        
-            double diff = (bound - (input_data[next_vertex]-decp_data[index]))/2.0;
-            double d = (decp_data[index] - input_data[index] + bound )/2.0;
-            double d1 = ((input_data[next_vertex] + bound) - decp_data[next_vertex])/2.0;
-            double diff1 = (bound - (input_data[next_vertex]-decp_data[index]))/2.0;
-            
+    
+            double d = ((input_data[index] - bound) + decp_data[index]) / 2.0 - decp_data[index];
             
             if(decp_data[index]<decp_data[next_vertex] or (decp_data[index]==decp_data[next_vertex] and index<next_vertex)){
-                
-                
-            
                 return;
             }
+
             
-            if(d>=1e-16 ){
-                
-                if(abs(decp_data[index]-decp_data[next_vertex])<1e-16)
-                    {
-                        
-                        while(abs(input_data[index]-decp_data[index]+d)>bound and d>=2e-16){
-                            d/=2;
-                        }
-                        if (abs(input_data[index]-decp_data[index]+d)<=bound){
-                            delta = -d;
-                            double oldValue = d_deltaBuffer[index];
-                        
-                        if (delta > oldValue) {
-                                swap(index, delta);
-                            }
+            // printf("%.17f %.17f %.17f %.17f\n", decp_data[next_vertex], decp_data[index], input_data[index] - bound, input_data[next_vertex] - bound);
+            double oldValue = d_deltaBuffer[index];
+            if (d > oldValue) {
+                swap(index, d);
+            }  
 
-                        
-                        
-                        }
-                    }
-                else{
-                    if(decp_data[index]>=decp_data[next_vertex]){
-                        
-                        while(abs(input_data[index]-decp_data[index]+d)>bound and d>=2e-16){
-                                d/=2;
-                        }
-                        
-                        if(decp_data[index]>=threshold and threshold<=decp_data[next_vertex]){
-                            
-                            while(decp_data[index] - d < threshold and d>=2e-16)
-                            {
-                                d/=2;
-                            }
-                            
-                            
-                        }
-                        
-
-                        if(abs(input_data[index]-(decp_data[index]-d))<=bound and decp_data[index]>=decp_data[next_vertex] and d>=1e-16){
-                            
-                            delta = -d;
-                            
-
-                            double oldValue = d_deltaBuffer[index];
-                            
-                            if (delta > oldValue) {
-                                    
-                                    swap(index, delta);
-                                    
-                                } 
-                           
-                                            
-                        }
-                        
-                   
-                };
-                     }
+            return;
             
-                 
-            
-                
-            }
-            else{
-                
-                if(decp_data[index]>decp_data[next_vertex]){
-                    double t = (decp_data[next_vertex]-(input_data[index]-bound))/2.0;
-                    if(abs(input_data[index]-decp_data[next_vertex]+t)<=bound and t>=1e-16){
-                            
-                            
-                            
-                            delta = decp_data[index]-(decp_data[next_vertex] - t);
-                            
-                            
-                            double oldValue = d_deltaBuffer[index];
-                            
-                            if (delta > oldValue) {
-                                    swap(index, delta);
-                                    
-                                   
-                                }
-                           
-                        }
-                    else{
-                        
-                        
-                        delta = decp_data[index]-(input_data[index] - bound);
-                       
-                        
-                        double oldValue = d_deltaBuffer[index];
-                        
-                        if (delta > oldValue) {
-                                
-                                swap(index,delta);
-                                
-                                
-                            }
-
-                        
-                    }
-                    
-                }
-                else if(abs(decp_data[index]-decp_data[next_vertex])<1e-16){
-                    
-                    double d = (bound - (input_data[index]-decp_data[index]))/2.0;
-                    double d1 = (bound - (input_data[next_vertex]-decp_data[next_vertex]))/2.0;
-                    
-                    if(abs(input_data[index]-decp_data[index]+d)<=bound){
-                        
-                       
-                        delta = -d;
-
-                        double oldValue = d_deltaBuffer[index];
-                        if (delta > oldValue) {
-                               
-                                swap(index, delta);
-                                
-                            }
-                       
-                        
-                    }
-                    
-                    else if(abs(input_data[next_vertex]-decp_data[next_vertex]-d1)<=bound){
-                        
-                        delta = d1;
-                        
-                        
-                        double oldValue = d_deltaBuffer[next_vertex];
-                        
-                        if (delta > oldValue) {
-                                
-                                swap(index, delta);
-                                
-                            }
-                        
-                    }
-                }
-                
-            }
             
             
         
         }
         else{
+            // if is a maximum in the original data;
             
-            int largest_index = from_direction_to_index1(index,de_direction_as[index]);
-            
-            double diff = (bound-(input_data[index]-decp_data[index]))/2.0;
-            double d = (bound-(input_data[largest_index]-decp_data[index]))/2.0;
+            int largest_index = from_direction_to_index1(index, de_direction_as[index]);
             
             if(decp_data[index]>decp_data[largest_index] or(decp_data[index]==decp_data[largest_index] and index>largest_index)){
                 return;
             }
-            if(d>=1e-16){
-                
-                if (decp_data[index]<=decp_data[largest_index]){
-                    if(abs(input_data[largest_index]-decp_data[index]+d)<bound){
-                        
-                        delta = (decp_data[index]-d)-decp_data[largest_index];
-             
-                        double oldValue = d_deltaBuffer[largest_index];
-                        
-                        if (delta > oldValue) {
-                                
-                                swap(largest_index, delta);
-                                
-                            }
-                        
-                        
-                    }
-                }
-                
-            
-                
-            }
-            
-            else{
-                if(decp_data[index]<=decp_data[largest_index]){
-                    
-                    delta = (input_data[index] + bound)-decp_data[index];
-                    
-                        
-                        double oldValue = d_deltaBuffer[index];
-                        
-                        if (delta > oldValue) {
-                                
-                                
-                                swap(index, delta);
-                                
-                            }
-                    
-                }
-                    
-            }
 
+            double d = ((input_data[largest_index] - bound) + decp_data[largest_index]) / 2.0 - decp_data[largest_index];
             
-            
+            double oldValue = d_deltaBuffer[largest_index];
+            if (d > oldValue) {
+                swap(largest_index, d);
+            }  
+
+            return;
         }
         
         
@@ -957,227 +723,233 @@ __global__ void fix_maxi_critical1(int direction, int cnt){
             
             int next_vertex= from_direction_to_index1(index,or_mini[index]);
             
-            double diff = (bound - (input_data[next_vertex]-decp_data[index]))/2.0;
-            double d =  (bound+input_data[index]-decp_data[index])/2.0;
+
+            double d = ((input_data[next_vertex] - bound) + decp_data[index]) / 2.0 - decp_data[next_vertex];
             
-            
-            double d1 = (decp_data[next_vertex]-input_data[next_vertex]+bound)/2.0;
             if(decp_data[index]>decp_data[next_vertex] or (decp_data[index]==decp_data[next_vertex] and index>next_vertex)){
-                
                 return;
             }
 
             
+            // printf("%.17f %.17f %.17f %.17f\n", decp_data[next_vertex], decp_data[index], input_data[index] - bound, input_data[next_vertex] - bound);
+            double oldValue = d_deltaBuffer[next_vertex];
+            if (d > oldValue) {
+                swap(next_vertex, d);
+            }  
+
+            return;
+
             
             
-            if(diff>=1e-16){
+            
+            // if(diff>=1e-16){
                 
-                if(abs(decp_data[index]-decp_data[next_vertex])<1e-16){
+            //     if(abs(decp_data[index]-decp_data[next_vertex])<1e-16){
                     
                       
                     
-                        while(abs(input_data[next_vertex]-decp_data[index]-diff)>bound and diff>=2e-16){
-                            diff/=2;
-                        }
+            //             while(abs(input_data[next_vertex]-decp_data[index]-diff)>bound and diff>=2e-16){
+            //                 diff/=2;
+            //             }
                         
-                        if(abs(input_data[next_vertex]-decp_data[index]+diff)<=bound and diff>=1e-16){
+            //             if(abs(input_data[next_vertex]-decp_data[index]+diff)<=bound and diff>=1e-16){
                            
-                            delta = (decp_data[index]-diff) - decp_data[next_vertex];
+            //                 delta = (decp_data[index]-diff) - decp_data[next_vertex];
                             
                             
-                            double oldValue = d_deltaBuffer[next_vertex];
+            //                 double oldValue = d_deltaBuffer[next_vertex];
                         
-                        if (delta > oldValue) {
+            //             if (delta > oldValue) {
                                 
                                 
-                                swap(next_vertex, delta);
+            //                     swap(next_vertex, delta);
                                 
-                            }
+            //                 }
                             
-                        }
-                        else if(d1>=1e-16){
+            //             }
+            //             else if(d1>=1e-16){
                             
-                            delta = -d1;
+            //                 delta = -d1;
                     
                             
-                            double oldValue = d_deltaBuffer[next_vertex];
+            //                 double oldValue = d_deltaBuffer[next_vertex];
                     
-                        if (delta > oldValue) {
+            //             if (delta > oldValue) {
                                 
                                 
-                                swap(next_vertex,delta);
-                            }
-                        }
-                        else if(d>=1e-16){
+            //                     swap(next_vertex,delta);
+            //                 }
+            //             }
+            //             else if(d>=1e-16){
 
                             
-                            delta = d;
+            //                 delta = d;
                             
-                            double oldValue = d_deltaBuffer[index];
+            //                 double oldValue = d_deltaBuffer[index];
                       
-                        if (delta > oldValue) {
+            //             if (delta > oldValue) {
                                 
                                 
-                                swap(index, delta);
-                            }
+            //                     swap(index, delta);
+            //                 }
                             
-                        }
+            //             }
 
                     
                     
-                }
-                else{
-                    if(decp_data[index]<=decp_data[next_vertex]){
+            //     }
+            //     else{
+            //         if(decp_data[index]<=decp_data[next_vertex]){
                         
-                            while(abs(input_data[next_vertex]-decp_data[index]+diff)>bound and diff >= 2e-16){
-                                    diff/=2;
-                            }
+            //                 while(abs(input_data[next_vertex]-decp_data[index]+diff)>bound and diff >= 2e-16){
+            //                         diff/=2;
+            //                 }
                             
                             
-                            if (abs(input_data[next_vertex]-decp_data[index]+diff)<=bound and decp_data[index]<=decp_data[next_vertex] and diff>=1e-16){
+            //                 if (abs(input_data[next_vertex]-decp_data[index]+diff)<=bound and decp_data[index]<=decp_data[next_vertex] and diff>=1e-16){
                                
-                                while(abs(input_data[next_vertex]-decp_data[index]+diff)<bound and diff <= 1e-17){
-                                    diff*=2;
-                                }
-                                if(abs(input_data[next_vertex]-decp_data[index]+diff)<=bound){
+            //                     while(abs(input_data[next_vertex]-decp_data[index]+diff)<bound and diff <= 1e-17){
+            //                         diff*=2;
+            //                     }
+            //                     if(abs(input_data[next_vertex]-decp_data[index]+diff)<=bound){
                                     
-                                    delta = (decp_data[index]-diff) - decp_data[next_vertex];
+            //                         delta = (decp_data[index]-diff) - decp_data[next_vertex];
                                     
                                     
                                     
-                                    double oldValue = d_deltaBuffer[next_vertex];
+            //                         double oldValue = d_deltaBuffer[next_vertex];
                         
-                        if (delta > oldValue) {
+            //             if (delta > oldValue) {
                                
                                 
-                                swap(next_vertex, delta);
+            //                     swap(next_vertex, delta);
                                 
                                 
-                            }
-                                }
+            //                 }
+            //                     }
                                 
-                            }
+            //                 }
                             
-                            else if(abs(input_data[next_vertex]-decp_data[next_vertex]+d1)<=bound and decp_data[index]<=decp_data[next_vertex] and d1>=1e-16){
-                                while(abs(input_data[next_vertex]-decp_data[next_vertex]+d1)<bound and d1<=1e-16){
-                                    d1*=2;
-                                }
+            //                 else if(abs(input_data[next_vertex]-decp_data[next_vertex]+d1)<=bound and decp_data[index]<=decp_data[next_vertex] and d1>=1e-16){
+            //                     while(abs(input_data[next_vertex]-decp_data[next_vertex]+d1)<bound and d1<=1e-16){
+            //                         d1*=2;
+            //                     }
                                 
-                                if(abs(input_data[next_vertex]-decp_data[next_vertex]+d1)<=bound and d1>=1e-16){
+            //                     if(abs(input_data[next_vertex]-decp_data[next_vertex]+d1)<=bound and d1>=1e-16){
                                     
-                                    delta = -d1;
+            //                         delta = -d1;
                                     
                             
                             
-                            double oldValue = d_deltaBuffer[next_vertex];
+            //                 double oldValue = d_deltaBuffer[next_vertex];
                         
                         
-                        if (delta > oldValue) {
+            //             if (delta > oldValue) {
                                 
-                                swap(next_vertex, delta);
+            //                     swap(next_vertex, delta);
                                 
-                            }
-                                }
+            //                 }
+            //                     }
                                 
                                 
-                            }
-                            else{
+            //                 }
+            //                 else{
                                
-                                delta = (input_data[next_vertex] - bound)- decp_data[next_vertex];
+            //                     delta = (input_data[next_vertex] - bound)- decp_data[next_vertex];
                                 
                             
                             
-                            double oldValue = d_deltaBuffer[next_vertex];
+            //                 double oldValue = d_deltaBuffer[next_vertex];
                         
-                        if (delta > oldValue) {
+            //             if (delta > oldValue) {
                                
-                                swap(next_vertex, delta);
+            //                     swap(next_vertex, delta);
                                 
-                            }
+            //                 }
                                
-                            }
+            //                 }
                             
                             
                         
                         
-                };
+            //     };
 
-                }
+            //     }
                 
                 
 
                 
-            }
+            // }
 
-            else{
+            // else{
                 
-                if(decp_data[index]<decp_data[next_vertex]){
+            //     if(decp_data[index]<decp_data[next_vertex]){
                     
-                        double t = (decp_data[index]-(input_data[index]-bound))/2.0;
-                        if(abs(input_data[next_vertex]-decp_data[index]+t)<bound and t>=1e-16){
+            //             double t = (decp_data[index]-(input_data[index]-bound))/2.0;
+            //             if(abs(input_data[next_vertex]-decp_data[index]+t)<bound and t>=1e-16){
                             
                             
-                            delta = (decp_data[index]-t) - decp_data[next_vertex];
+            //                 delta = (decp_data[index]-t) - decp_data[next_vertex];
                             
                             
                             
-                            double oldValue = d_deltaBuffer[next_vertex];
+            //                 double oldValue = d_deltaBuffer[next_vertex];
                             
                        
-                        if (delta > oldValue) {
+            //             if (delta > oldValue) {
                                 
-                                swap(next_vertex, delta);
+            //                     swap(next_vertex, delta);
                                 
-                            }
+            //                 }
                             
-                        }
-                        else{
+            //             }
+            //             else{
                             
-                            delta = (input_data[index] + bound) - decp_data[index];
+            //                 delta = (input_data[index] + bound) - decp_data[index];
                             
-                            double oldValue = d_deltaBuffer[index];
+            //                 double oldValue = d_deltaBuffer[index];
                         
-                        if (delta > oldValue) {
+            //             if (delta > oldValue) {
                                
-                                swap(index, delta);
+            //                     swap(index, delta);
                                 
-                            }
+            //                 }
                             
-                        }
-                }
+            //             }
+            //     }
                 
-                else if(decp_data[index]==decp_data[next_vertex]){
-                    double d = (bound - (input_data[index]-decp_data[index]))/2.0;
+            //     else if(decp_data[index]==decp_data[next_vertex]){
+            //         double d = (bound - (input_data[index]-decp_data[index]))/2.0;
                     
-                    if(abs(input_data[index]-decp_data[index]-d)<=bound){
+            //         if(abs(input_data[index]-decp_data[index]-d)<=bound){
                         
-                        delta = d;
+            //             delta = d;
                         
                         
-                            double oldValue = d_deltaBuffer[index];
+            //                 double oldValue = d_deltaBuffer[index];
                         
-                        if (delta > oldValue) {
+            //             if (delta > oldValue) {
                                 
-                                swap(index, delta);
+            //                     swap(index, delta);
                                 
-                            }
+            //                 }
                         
-                    }
-                    else if(abs(input_data[next_vertex]-decp_data[next_vertex]+d)<=bound){
+            //         }
+            //         else if(abs(input_data[next_vertex]-decp_data[next_vertex]+d)<=bound){
                         
-                        delta = -d;
+            //             delta = -d;
                         
                         
-                        double oldValue = d_deltaBuffer[next_vertex];
+            //             double oldValue = d_deltaBuffer[next_vertex];
                         
-                        if (delta > oldValue) {
+            //             if (delta > oldValue) {
                                 
-                                swap(next_vertex, delta);
+            //                     swap(next_vertex, delta);
                                 
-                            }
-                    }
-                }
-            }
+            //                 }
+            //         }
+            //     }
+            // }
             
 
             
@@ -1191,13 +963,26 @@ __global__ void fix_maxi_critical1(int direction, int cnt){
             
             int largest_index = from_direction_to_index1(index,de_direction_ds[index]);
             double diff = (bound-(input_data[index]-decp_data[index]))/2.0;
-            double d = (bound-(input_data[largest_index]-decp_data[index]))/2.0;
+            
             
             if(decp_data[index]<decp_data[largest_index] or (decp_data[index]==decp_data[largest_index] and index<largest_index)){
                 // de_direction_ds[index] = -1;
                 return;
             }
             
+            double d = ((input_data[index] - bound) + decp_data[index]) / 2.0 - decp_data[index];
+            
+            
+
+            
+            // printf("%.17f %.17f %.17f %.17f\n", decp_data[next_vertex], decp_data[index], input_data[index] - bound, input_data[next_vertex] - bound);
+            double oldValue = d_deltaBuffer[index];
+            if (d > oldValue) {
+                swap(index, d);
+            }  
+
+            return;
+
             if (diff>=1e-16){
                 if (decp_data[index]>=decp_data[largest_index]){
                     while(abs(input_data[index]-decp_data[index]+diff)>bound and diff>=2e-16){
@@ -1314,10 +1099,25 @@ __global__ void fixpath11(int direction){
             int false_index= from_direction_to_index1(cur,de_direction_as[cur]);
             int true_index= from_direction_to_index1(cur, or_maxi[cur]);
             if(false_index==true_index) return;
+
+            double d = ((input_data[false_index] - bound) + decp_data[false_index]) / 2.0 - decp_data[false_index];
+            
+            
+
+            
+            // printf("%.17f %.17f %.17f %.17f\n", decp_data[next_vertex], decp_data[index], input_data[index] - bound, input_data[next_vertex] - bound);
+            double oldValue = d_deltaBuffer[false_index];
+            if (d > oldValue) {
+                swap(false_index, d);
+            }  
+
+            return;
+
+            
             
             double diff = (input_data[true_index]-bound-decp_data[false_index])/2.0;
             
-            double d = (decp_data[false_index]-input_data[false_index]+bound)/2.0;
+            // double d = (decp_data[false_index]-input_data[false_index]+bound)/2.0;
             
             if(decp_data[false_index]<decp_data[true_index]){
                 de_direction_as[cur]=or_maxi[cur];
@@ -1471,8 +1271,6 @@ __global__ void fixpath11(int direction){
         while (or_mini[cur] == de_direction_ds[cur]){
             
             int next_vertex = from_direction_to_index1(cur,de_direction_ds[cur]);
-            
-            
             if (next_vertex == cur){
                 cur = next_vertex;
                 break;
@@ -1493,10 +1291,21 @@ __global__ void fixpath11(int direction){
             int true_index= from_direction_to_index1(cur, or_mini[cur]);
             if(false_index==true_index) return;
 
+            double d = ((input_data[true_index] - bound) + decp_data[true_index]) / 2.0 - decp_data[true_index];
+            
+            
+            // printf("%.17f %.17f %.17f %.17f\n", decp_data[next_vertex], decp_data[index], input_data[index] - bound, input_data[next_vertex] - bound);
+            double oldValue = d_deltaBuffer[true_index];
+            if (d > oldValue) {
+                swap(true_index, d);
+            }  
+
+            return;
+
             
             double diff = (bound-(input_data[true_index]-decp_data[false_index]))/2.0;
             
-            double d = (bound-(input_data[false_index]-decp_data[false_index]))/2.0;
+            // double d = (bound-(input_data[false_index]-decp_data[false_index]))/2.0;
             
             if(decp_data[false_index]>decp_data[true_index]){
                 de_direction_ds[cur]=or_mini[cur];
@@ -1656,19 +1465,12 @@ void resizeArray(double** d_array, int* sizes, int row, int new_size) {
 __global__ void applyDeltaBuffer1() {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     
-    if (tid < num and lowgradientindices[tid]!=1) {
-       
-       
-        
-        if(d_deltaBuffer[tid]!=-2000){
-
-            decp_data[tid] += d_deltaBuffer[tid];
+    if (tid < num) {
+        if(d_deltaBuffer[tid] != -2000){
+            if(abs(d_deltaBuffer[tid]) > 1e-15) decp_data[tid] += d_deltaBuffer[tid];
+            else decp_data[tid] = input_data[tid] - bound;
         }
-        
-        
-       
 
-        
         
     }
     
@@ -1682,9 +1484,7 @@ __global__ void getlabel(int *un_sign_ds, int *un_sign_as, int type=0){
     int *direction_ds;
     int *label;
     
-    if(i>=num or lowgradientindices[i]==1){
-        
-        
+    if(i>=num){
         return;
     }
     
@@ -1814,7 +1614,7 @@ __global__ void initializeWithIndex(int size, int type=0) {
 }
 
 
-void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,std::vector<int> *d,std::vector<double> *input_data1,std::vector<double> *decp_data1,std::vector<int>* dec_label1,std::vector<int>* or_label1, int width1, int height1, int depth1, std::vector<int> *low,double bound1,float &datatransfer,float &finddirection){
+void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,std::vector<int> *d,std::vector<double> *input_data1,std::vector<double> *decp_data1,std::vector<int>* dec_label1,std::vector<int>* or_label1, int width1, int height1, int depth1, std::vector<int> *low,double bound1,float &datatransfer,float &finddirection, int preserve_min, int preserve_max, int preserve_path){
     int* temp;
     
     int* temp1;
@@ -1844,7 +1644,7 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
     int h_un_sign_ds = num1;
     
     float elapsedTime;
-    int initialValue = 0;
+    // int initialValue = 0;
     cout<<bound1<<endl;
     
     
@@ -2067,10 +1867,7 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
     
     int initialValue = 0;
     cudaStatus = cudaMemcpyToSymbol(count_f_max, &initialValue, sizeof(int));
-    // if (cudaStatus != cudaSuccess) {
-    //     std::cerr << "cudaMemcpyToSymbol failed4: " << cudaGetErrorString(cudaStatus) << std::endl;
-    // }
-    // int initialValue = 0;
+    
     cudaStatus = cudaMemcpyToSymbol(count_f_min, &initialValue, sizeof(int));
     iscriticle<<<gridSize,blockSize>>>();
     
@@ -2078,7 +1875,7 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&elapsedTime, start, stop);
-    cout<<"100次getfcp: "<<elapsedTime<<endl;
+    
     // double h_s[num1];
     int host_count_f_max;
     cudaStatus = cudaMemcpyFromSymbol(&host_count_f_max, count_f_max, sizeof(int), 0, cudaMemcpyDeviceToHost);
@@ -2090,140 +1887,89 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
     if (cudaStatus != cudaSuccess) {
             std::cerr << "cudaMemcpyToSymbol failed12: " << cudaGetErrorString(cudaStatus) << std::endl;
     }
-    // cudaMemcpyFromSymbol(&h_s, decp_data, num1*sizeof(double), 0, cudaMemcpyDeviceToHost);
     
-    // std::cout<<"before: "<<h_s[96955]<<std::endl;
     int cnt  = 0;
-    // int h_all_max[num1];
+    
     std::vector<int> h_all_max(num1);
     int h_count_f_max = 0;
     
+    if(preserve_max == 0) host_count_f_max = 0;
+    if(preserve_min == 0) host_count_f_min = 0;
     
     
-    while(false){
-        
-            
-            // std::cout<<host_count_f_min<<","<<host_count_f_max<<std::endl;
+    while(host_count_f_min>0 || host_count_f_max>0){
+            cout<<host_count_f_min<<", "<<host_count_f_max<<endl;
             
             initializeKernel1<<<gridSize, blockSize>>>(init_value);
-            // cpite+=1;
+            
             
             cudaDeviceSynchronize();
-            
-            // cudaDeviceSynchronize();
             
             dim3 blockSize1(256);
             
             dim3 gridSize1((host_count_f_max + blockSize1.x - 1) / blockSize1.x);
-            // cudaEventRecord(start, 0);
             cudaEventRecord(start, 0);
-            
-
-            
-
-            
-
-            
             int threads_per_block = 256;
             int num_blocks = (num1+threads_per_block-1)/threads_per_block;
-            
-            
-            
-            // cudaMemcpy(h_all_max.data(), d_temp, num1 * sizeof(int),  cudaMemcpyDeviceToHost);
-            // std::sort(h_all_max.begin(), h_all_max.end(), std::greater<int>());
-            
-            
-            // cudaStatus = cudaMemcpy(d_temp, h_all_max.data(), num1 * sizeof(int), cudaMemcpyHostToDevice);
-            
-            
-            // cudaStatus = cudaMemcpyToSymbol(all_max, &d_temp, sizeof(int*));
             cudaEventRecord(start, 0);
-            // cudaMemcpy(h_all_max.data(), d_temp, num1 * sizeof(int),  cudaMemcpyDeviceToHost);
-            fix_maxi_critical1<<<gridSize1, blockSize1>>>(0,cnt);
-            
+            if(preserve_max == 1)
+            {
+                fix_maxi_critical1<<<gridSize1, blockSize1>>>(0,cnt);
+            }   
  
             dim3 blocknum(256);
             dim3 gridnum((host_count_f_min + blocknum.x - 1) / blocknum.x);
-            fix_maxi_critical1<<<gridnum, blocknum>>>(1,cnt);
+            if(preserve_min == 1)
+            {
+                fix_maxi_critical1<<<gridnum, blocknum>>>(1,cnt);
+            
+            }
+            
             applyDeltaBuffer1<<<gridSize, blockSize>>>();
             cudaEventRecord(stop, 0);
             cudaEventSynchronize(stop);
             cudaEventElapsedTime(&elapsedTime, start, stop);
 
-            
-            
-            
             cudaDeviceSynchronize();
-            
-            // initializeKernel1<<<gridSize, blockSize>>>(init_value);
-            
             
             cudaEventRecord(stop, 0);
             cudaEventSynchronize(stop);
 
             
             cudaEventElapsedTime(&elapsedTime, start, stop);
-            // fixtime_cp+=elapsedTime;
-            
-            
             cudaStatus = cudaMemcpyToSymbol(count_f_max, &initialValue, sizeof(int));
-                if (cudaStatus != cudaSuccess) {
+            if (cudaStatus != cudaSuccess) {
             std::cerr << "cudaMemcpyToSymbol failed11: " << cudaGetErrorString(cudaStatus) << std::endl;
-        }
+            }
             cudaStatus = cudaMemcpyToSymbol(count_f_min, &initialValue, sizeof(int));
             
-                if (cudaStatus != cudaSuccess) {
+            if (cudaStatus != cudaSuccess) {
             std::cerr << "cudaMemcpyToSymbol failed11: " << cudaGetErrorString(cudaStatus) << std::endl;
-        }
+            }
 
-            
-            
-            // cudaMemcpyFromSymbol(&h_s, decp_data, num1*sizeof(double), cudaMemcpyDeviceToHost);
-            cudaDeviceSynchronize();
-            // cout<<"wanc"<<endl;
-            
-            
-            
-            // cudaMemcpyFromSymbol(&h_s, decp_data, num1*sizeof(double), cudaMemcpyDeviceToHost);
-            cudaDeviceSynchronize();
-            // std::cout<<"before: "<<h_s[88541]<<std::endl;
-            // clearStacksKernel<<<gridSize, blockSize>>>();
             cudaDeviceSynchronize();
             iscriticle<<<gridSize, blockSize>>>();
-            
-            // cudaEventRecord(stop, 0);
-            // cudaEventSynchronize(stop);
-
-            
             find_direction<<<gridSize,blockSize>>>();
-            
-            
-            // cudaEventRecord(stop, 0);
-            // cudaEventSynchronize(stop);
-            // cudaEventElapsedTime(&elapsedTime, start, stop);
-            // finddirection1+=elapsedTime;
-            
-            
             cudaMemcpyFromSymbol(&host_count_f_max, count_f_max, sizeof(int), 0, cudaMemcpyDeviceToHost);
-            
             cudaMemcpyFromSymbol(&host_count_f_min, count_f_min, sizeof(int), 0, cudaMemcpyDeviceToHost);
-            // cout<<host_count_f_max<<", "<<host_count_f_min<<endl;
+            
             cudaDeviceSynchronize();
-            // cudaFree(d_deltaBuffer);
-            // exit(0);
-            cnt+=1;
+            if(preserve_max == 0) host_count_f_max = 0;
+            if(preserve_min == 0) host_count_f_min = 0;
+            
     }
 
-    // cudaEventRecord(stop, 0);
-    // cudaEventSynchronize(stop);
     
+    if(preserve_path ==0 || preserve_max == 0 || preserve_min == 0) 
+    {
+        cudaMemcpy(decp_data1->data(), temp4, num1 * sizeof(double), cudaMemcpyDeviceToHost);
+        return;
+    }
     cudaEventRecord(start, 0);
 
     initializeWithIndex<<<gridSize, blockSize>>>(num1,0);
     initializeWithIndex<<<gridSize, blockSize>>>(num1,1);
-    // dim3 blockSize1(256);
-    // dim3 gridSize1((num1 + blockSize1.x - 1) / blockSize1.x);
-    // mappath;
+    
     cudaEventRecord(start, 0);
    
     while(h_un_sign_as>0 or h_un_sign_ds>0){
@@ -2291,7 +2037,7 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
     }
     
     while(host_count_p_min>0 or host_count_p_max>0 or host_count_f_min>0 or host_count_f_max>0){
-        // cout<<"path:"<<host_count_p_min<<", "<<host_count_p_max<<", "<<host_count_f_min<<", "<<host_count_f_max<<endl;
+        cout<<host_count_f_max<<", "<<host_count_f_min<<","<< host_count_p_max<<","<<host_count_p_min<<endl;
         datatransfer = 0.0;
         mappath_path = 0.0;
         getfpath = 0.0;
@@ -2366,7 +2112,7 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
         // cout<<host_count_f_max<<", "<<host_count_f_min<<endl;
         while(host_count_f_max>0 or host_count_f_min>0){
         
-            // cout<<host_count_f_max<<", "<<host_count_f_min<<endl;
+            cout<<host_count_f_max<<", "<<host_count_f_min<<endl;
             sub_cnt+=1;
             
             dim3 blockSize1(256);
