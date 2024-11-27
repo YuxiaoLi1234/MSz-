@@ -313,7 +313,7 @@ int main(int argc, char** argv){
     filename = path.stem().string();
     std::cout << "Extracted file name: " << filename<< std::endl;
     
-    inputfilename = filename+".bin";
+    inputfilename = file_path + ".bin";
     
     
 
