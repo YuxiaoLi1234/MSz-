@@ -8,7 +8,6 @@
 #include <cstdlib>
 #include <fstream>
 #include <stdatomic.h>
-#include <parallel/algorithm>  
 #include <unordered_map>
 #include <random>
 #include <atomic>
@@ -32,8 +31,6 @@
 using namespace std;
 namespace fs = std::filesystem;
 int pre = 0;
-// g++-12 -std=c++17 -O3 -g -fopenmp -c main.cpp -o main.o
-// g++-12 -fopenmp main.o kernel.o -L/opt/nvidia/hpc_sdk/Linux_x86_64/23.9/cuda/12.2/lib64 -lcudart -o helloworld
 
 int width1;
 int height1;
@@ -132,56 +129,7 @@ std::vector<int> find_low(){
 
 std::vector<int> lowGradientIndices;
 
-std::vector<std::vector<int>> _compute_adjacency(){
-    std::vector<std::vector<int>> adjacency1;
-    for (int i = 0; i < size2; ++i) {
-            int y = (i / (width1)) % height1; // Get the x coordinate
-            int x = i % width1; // Get the y coordinate
-            int z = (i / (width1 * height1)) % depth1;
-            std::vector<int> adjacency_temp;
-            for (auto& dir : directions2) {
-                int newX = x + dir[0];
-                int newY = y + dir[1];
-                int newZ = z + dir[2];
-                int r = newX + newY  * width1 + newZ* (height1 * width1); // Calculate the index of the adjacent vertex
-                
-                
-                // Check if the new coordinates are within the bounds of the mesh
-                if (newX >= 0 && newX < width1 && newY >= 0 && newY < height1 && r < width1*height1*depth1 && newZ<depth1 && newZ>=0 && lowGradientIndices[r] != 1) {
-                    
-                    adjacency_temp.push_back(r);
-                }
-                // if(input_data1[r]-input_data1[i]==0 and input_data1[r]==0){
-                //     continue;
-                // }
-            }
-            adjacency1.push_back(adjacency_temp);
-        }
-    return adjacency1;
-}
-std::vector<std::vector<int>> adjacency1;
 
-
-
-std::map<std::tuple<int, int, int>, int> createDirectionMapping() {
-    std::map<std::tuple<int, int, int>, int> direction_mapping_3d;
-    direction_mapping_3d[std::make_tuple(0,1,0)] = 1;
-    direction_mapping_3d[std::make_tuple(0,-1,0)] = 2;
-    direction_mapping_3d[std::make_tuple(1,0,0)] = 3;
-    direction_mapping_3d[std::make_tuple(-1,0,0)] = 4;
-    direction_mapping_3d[std::make_tuple(-1,1,0)] = 5;
-    direction_mapping_3d[std::make_tuple(1,-1,0)] = 6;
-
-    // Additional 3D directions
-    direction_mapping_3d[std::make_tuple(0, 0, -1)] = 7;   // down in Z
-    direction_mapping_3d[std::make_tuple(0,-1, 1)] = 8;   // down-left in Z
-    direction_mapping_3d[std::make_tuple(0, 0, 1)] = 9;    // up in Z
-    direction_mapping_3d[std::make_tuple(0, 1, -1)] = 10;  // up-right in Z
-    direction_mapping_3d[std::make_tuple(-1, 0, 1)] = 11;  // left-up in Z
-    direction_mapping_3d[std::make_tuple(1, 0, -1)] = 12; 
-
-    return direction_mapping_3d;
-};
 
 int a = 0;
 
@@ -193,10 +141,6 @@ std::map<int, std::tuple<int, int, int>> createReverseMapping(const std::map<std
     }
     return reverseMap;
 }
-std::map<std::tuple<int, int ,int>, int> direction_mapping = createDirectionMapping();
-
-std::map<int, std::tuple<int, int ,int>> reverse_direction_mapping = createReverseMapping(direction_mapping);
-
 
 
 
@@ -205,44 +149,6 @@ std::vector<int> wrong_maxi_cp;
 std::vector<int> wrong_min_cp;
 std::vector<int> wrong_index_as;
 std::vector<int> wrong_index_ds;
-int direction_to_index_mapping1[12][3] = {{0,1,0},{0,-1,0},{1,0,0},{-1,0,0},{-1,1,0},{1,-1,0},{0,0, -1},  {0,-1, 1}, {0,0, 1},  {0,1, -1},  {-1,0, 1},   {1, 0,-1}};
-
-int getDirection(const std::map<std::tuple<int, int, int>, int>& direction_mapping, int row_diff, int col_diff, int dep_diff) {
-    auto it = direction_mapping.find(std::make_tuple(row_diff, col_diff,dep_diff));
-    
-    if (it != direction_mapping.end()) {
-        return it->second;
-    } else {
-        return -1; 
-    }
-}
-
-
-int from_direction_to_index(int cur, int direc){
-    
-    if (direc==-1) return cur;
-    int x = cur % width1;
-    int y = (cur / width1) % height1;
-    int z = (cur/(width1 * height1))%depth1;
-    // printf("%d %d\n", row, rank1);
-    if (direc >= 1 && direc <= 12) {
-        int delta_row = direction_to_index_mapping1[direc-1][0];
-        int delta_col = direction_to_index_mapping1[direc-1][1];
-        int delta_dep = direction_to_index_mapping1[direc-1][2];
-        
-        
-        int next_row = x + delta_row;
-        int next_col = y + delta_col;
-        int next_dep = z + delta_dep;
-        // printf("%d \n", next_row * width1 + next_col);
-        // return next_row * width1 + next_col + next_dep* (height1 * width1);
-        return next_row + next_col * width1 + next_dep* (height1 * width1);
-    }
-    else {
-        return -1;
-    }
-    // return 0;
-};
 
 std::vector<int> or_direction_as;
 std::vector<int> or_direction_ds;
@@ -279,121 +185,8 @@ double calculatePSNR(const std::vector<double>& original, const std::vector<doub
 
 
 
-extern void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,std::vector<int> *d,std::vector<double> *input_data1,std::vector<double> *decp_data1,std::vector<int>* dec_label1,std::vector<int>* or_label1, int width1, int height1, int depth1, std::vector<int> *low,double bound1,float &datatransfer,float &finddirection, int preserve_min, int preserve_max, int preserve_path);
+extern void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,std::vector<int> *d,std::vector<double> *input_data1,std::vector<double> *decp_data1,std::vector<int>* dec_label1,std::vector<int>* or_label1, int width1, int height1, int depth1, std::vector<int> *low,double bound1,float &datatransfer,float &finddirection, int preserve_min, int preserve_max, int preserve_path, int neighbor_number);
 
-extern void fix_process(std::vector<int> *c,std::vector<int> *d, std::vector<double> *decp_data1, float &datatransfer, float &finddirection, float &getfcp, float &fixtime_cp,int &cpite);
-extern void mappath1(std::vector<int> *label, std::vector<int> *direction_as, std::vector<int> *direction_ds, float &finddirection, float &mappath_path, float &datatransfer,int type=0);
-
-void getlabel(int i){
-    
-    
-    
-    int cur = dec_label1[i*2+1];
-    int next_vertex;
-    // cout<<cur<<endl;
-    if (cur==-1){
-        
-        return;
-    }
-    else if (de_direction_as1[cur]!=-1){
-        
-        // cout<<cur<<" "<<de_direction_as1[cur]<<endl;
-        int direc = de_direction_as1[cur];
-        int row = cur/width1;
-        int rank1 = cur%width1;
-        
-        switch (direc) {
-            case 1:
-                next_vertex = (row)*width1 + (rank1-1);
-                break;
-            case 2:
-                next_vertex = (row-1)*width1 + (rank1);
-                break;
-            case 3:
-                next_vertex = (row-1)*width1 + (rank1+1);
-                break;
-            case 4:
-                next_vertex = (row)*width1 + (rank1+1);
-                break;
-            case 5:
-                next_vertex = (row+1)*width1 + (rank1);
-                break;
-            case 6:
-                next_vertex = (row+1)*width1 + (rank1-1);
-                break;
-        };
-
-        cur = next_vertex;
-        
-        if (de_direction_as1[cur] != -1){
-            
-            un_sign_as+=1;
-        }
-
-        if(de_direction_as1[i]!=-1){
-            dec_label1[i*2+1] = cur;
-            
-        }
-        else{
-            dec_label1[i*2+1] = -1;
-        };
-        
-    }
-
-    
-    
-    cur = dec_label1[i*2];
-    int next_vertex1;
-    if(cur==-1){
-        return;
-    }
-    if (de_direction_as1[cur]!=-1){
-        // printf("%d\n", cur);
-        int direc = de_direction_ds1[cur];
-        int row = cur/width1;
-        int rank1 = cur%width1;
-        
-        switch (direc) {
-            case 1:
-                next_vertex1 = (row)*width1 + (rank1-1);
-                break;
-            case 2:
-                next_vertex1 = (row-1)*width1 + (rank1);
-                break;
-            case 3:
-                next_vertex1 = (row-1)*width1 + (rank1+1);
-                break;
-            case 4:
-                next_vertex1 = (row)*width1 + (rank1+1);
-                break;
-            case 5:
-                next_vertex1 = (row+1)*width1 + (rank1);
-                break;
-            case 6:
-                next_vertex1 = (row+1)*width1 + (rank1-1);
-                break;
-        };
-
-        cur = next_vertex1;
-        
-        if (de_direction_ds1[cur] != -1){
-            un_sign_ds+=1;
-            // printf("%d \n",i);
-        }
-
-        if(de_direction_ds1[i]!=-1){
-            dec_label1[i*2] = cur;
-            
-        }
-        else{
-            dec_label1[i*2] = -1;
-        };
-        
-    }
-
-    
-
-}
 double maxAbsoluteDifference(const std::vector<double>& vec1, const std::vector<double>& vec2) {
     if (vec1.size() != vec2.size()) {
         std::cerr << "Vectors are of unequal size." << std::endl;
@@ -410,14 +203,76 @@ double maxAbsoluteDifference(const std::vector<double>& vec1, const std::vector<
 
     return maxDiff;
 }
+
+
+void print_help(const std::string& program_name) {
+    std::cout << "Usage: " << program_name << " <path/to/data>,<width>,<height>,<depth> "
+              << "<relative_error_bound> <compressor_type> <connection_type> <preserve_min> <preserve_max> <preserve_integral_lines>\n\n"
+              
+              << "Arguments:\n"
+              << "  <path/to/your/data>,<width>,<height>,<depth>\n"
+              << "      Path to the input data file followed by its dimensions. Dimensions should be specified as width, height, and depth separated by commas.\n"
+              << "      Example: path/to/your/data.bin,256,256,128\n\n"
+
+              << "  <relative_error_bound>\n"
+              << "      Relative error bound as a floating-point number.\n"
+              << "      Example: 0.01\n\n"
+
+              << "  <compressor_type>\n"
+              << "      Compression library to use. Supported values are:\n"
+              << "      - sz3\n"
+              << "      - zfp\n"
+              << "      Example: sz3\n\n"
+
+              << "  <connection type>\n"
+              << "      Connectivity type:\n"
+              << "      - 0: Piecewise linear connectivity (e.g., 2D case: connects only up, down, left, right, up-right, and bottom-left).\n"
+              << "      - 1: Full connectivity (e.g., 2D case: also connects diagonally).\n"
+              << "      Example: 0\n\n"
+
+              << "  <preserve_min>\n"
+              << "      Whether to preserve local minima (0 for no, 1 for yes).\n"
+              << "      Example: 1\n\n"
+              << "  <preserve_max>\n"
+              << "      Whether to preserve local maxima (0 for no, 1 for yes).\n"
+              << "      Example: 0\n\n"
+
+              << "  <preserve_integral_lines>\n"
+              << "      Whether to preserve integral lines (0 for no, 1 for yes).\n"
+              << "      DO NOT use this option if:\n"
+              << "      - NOT both <preserve_min> and <preserve_max> are set to 1.\n"
+              << "      - <connection_type> is set to 1 (full connectivity).\n"
+              << "      Example: 1\n\n"
+
+              
+              
+              << "Options:\n"
+              << "  --help, -h           Show this help message and exit.\n\n"
+              << "Example usage:\n"
+              << "  " << program_name << " path/to/your/data.bin,256,256,128 0.01 sz3 1 0 1 0\n";
+}
+
 int main(int argc, char** argv){
-    omp_set_num_threads(44);
+
+    if (argc < 2) {
+        std::cerr << "Error: Missing arguments. Use --help for usage information.\n";
+        return 1;
+    }
+
+    std::string first_arg = argv[1];
+    if (first_arg == "--help" || first_arg == "-h") {
+        print_help(argv[0]);
+        return 0;
+    }
     std::string dimension = argv[1];
+    
     double range = std::stod(argv[2]);
     std::string compressor_id = argv[3];
-    int preserve_min = std::stoi(argv[4]);
-    int preserve_max = std::stoi(argv[5]);
-    int preserve_path = std::stoi(argv[6]);
+    int neighbor_number = std::stoi(argv[4]);
+    int preserve_min = std::stoi(argv[5]);
+    int preserve_max = std::stoi(argv[6]);
+    int preserve_path = std::stoi(argv[7]);
+    
 
 
 
@@ -433,13 +288,17 @@ int main(int argc, char** argv){
     
     std::istringstream iss(dimension);
     char delimiter;
+    std::string file_path;
+    
+
+    
     std::string filename;
-    if (std::getline(iss, filename, ',')) {
-        // 接下来读取整数值
+    if (std::getline(iss, file_path, ',')) {
+        
         if (iss >> width1 >> delimiter && delimiter == ',' &&
             iss >> height1 >> delimiter && delimiter == ',' &&
             iss >> depth1) {
-            std::cout << "Filename: " << filename << std::endl;
+            std::cout << "Filename: " << file_path << std::endl;
             std::cout << "Width: " << width1 << std::endl;
             std::cout << "Height: " << height1 << std::endl;
             std::cout << "Depth: " << depth1 << std::endl;
@@ -447,9 +306,12 @@ int main(int argc, char** argv){
             std::cerr << "Parsing error for dimensions" << std::endl;
         }
     } else {
-        std::cerr << "Parsing error for filename" << std::endl;
+        std::cerr << "Parsing error for file" << std::endl;
     }
 
+    std::filesystem::path path(file_path);
+    filename = path.stem().string();
+    std::cout << "Extracted file name: " << filename<< std::endl;
     
     inputfilename = filename+".bin";
     
@@ -522,10 +384,8 @@ int main(int argc, char** argv){
     or_label1.resize(size2*2, -1);
     dec_label1.resize(size2*2, -1);
     std::vector<std::vector<double>> time_counter;
-    // lowGradientIndices = find_low();
-    lowGradientIndices.resize(size2, 0);
     
-    adjacency1 = _compute_adjacency();
+    lowGradientIndices.resize(size2, 0);
     
     
 
@@ -550,7 +410,7 @@ int main(int argc, char** argv){
     double br = (compressed_dataSize*8)/size2;
     start = std::chrono::high_resolution_clock::now();
     
-    init_inputdata(dev_a, dev_b, dev_c, dev_d, dev_e, dev_f, dev_m,dev_q,width1, height1, depth1, dev_g, bound1, datatransfer,finddirection, preserve_min, preserve_max, preserve_path);
+    init_inputdata(dev_a, dev_b, dev_c, dev_d, dev_e, dev_f, dev_m,dev_q,width1, height1, depth1, dev_g, bound1, datatransfer,finddirection, preserve_min, preserve_max, preserve_path, neighbor_number);
     ends = std::chrono::high_resolution_clock::now();
     duration = ends - start;
     double additional_time = duration.count();
@@ -567,10 +427,10 @@ int main(int argc, char** argv){
         }
     }
     std::vector<int> diffs; 
-    std::string indexfilename = "../data"+filename+".bin";
-    std::string editsfilename = "../data_edits"+filename+".bin";
-    std::string compressedindex = "../data"+filename+".bin.zst";
-    std::string compressededits = "../data_edits"+filename+".bin.zst";
+    std::string indexfilename = "../index_"+filename+".bin";
+    std::string editsfilename = "../edits_"+filename+".bin";
+    std::string compressedindex = "../index_"+filename+".bin.zst";
+    std::string compressededits = "../edits_"+filename+".bin.zst";
     
     if (!indexs.empty()) {
         diffs.push_back(indexs[0]);
@@ -610,13 +470,63 @@ int main(int argc, char** argv){
         std::cout << "Compression failed." << std::endl;
     }
     
+
+    double compressed_indexSize = fs::file_size(compressedindex);
+    double compressed_editSize = fs::file_size(compressededits);
+    double original_indexSize = fs::file_size(indexfilename);
+    double original_editSize = fs::file_size(editsfilename);
+    double original_dataSize = fs::file_size(inputfilename);
     
     
+    double overall_ratio = (original_indexSize+original_editSize+original_dataSize)/(compressed_dataSize+compressed_editSize+compressed_indexSize);
+    double bitRate = 64/overall_ratio; 
+
+    double psnr = calculatePSNR(input_data1, decp_data_copy, maxValue-minValue);
+    double fixed_psnr = calculatePSNR(input_data1, decp_data1, maxValue-minValue);
+
+    std::ofstream outFile3("../result_"+filename+"_"+compressor_id+"_detailed.txt", std::ios::app);
 
     
+    if (!outFile3) {
+        std::cerr << "Unable to open file for writing." << std::endl;
+        return 0; 
+    }
+
     
+    outFile3 << std::to_string(bound1)<<":" << std::endl;
+    outFile3 << std::setprecision(17)<< "related_error: "<<range << std::endl;
+    outFile3 << std::setprecision(17)<< "Overall Compression Ratio: "<<overall_ratio << std::endl;
+    outFile3 << std::setprecision(17)<<"Original Compression Ratio: "<<original_dataSize/compressed_dataSize << std::endl;
+    outFile3 << std::setprecision(17)<<"Overall Bitrate: "<<bitRate << std::endl;
+    outFile3 << std::setprecision(17)<<"Original Bitrate: "<< (compressed_dataSize*8)/size2 << std::endl;
+    outFile3 << std::setprecision(17)<<"Original PSNR: "<<psnr << std::endl;
+    outFile3 << std::setprecision(17)<<"After Preservation PSNR: "<<fixed_psnr << std::endl;
     
 
+    // outFile3 << std::setprecision(17)<<"right_labeled_ratio: "<<right_labeled_ratio << std::endl;
+    outFile3 << std::setprecision(17)<<"edit_ratio: "<<ratio << std::endl;
+    outFile3 << std::setprecision(17)<<"compression_time: "<<compression_time<< std::endl;
+    outFile3 << std::setprecision(17)<<"additional_time: "<<additional_time<< std::endl;
+    outFile3 << "\n" << std::endl;
+   
+    outFile3.close();
+
+    std::cout << "Variables have been appended to output.txt" << std::endl;
+    
+    
+    command = "rm " + indexfilename;
+    result = std::system(command.c_str());
+    
+
+    command = "rm " + editsfilename;
+    result = std::system(command.c_str());
+    
+
+    command = "rm " + decpfilename;
+    result = std::system(command.c_str());
+    
+    
+    
     
     
     
