@@ -10,7 +10,7 @@ MSz is designed to preserve topological features such as local minima, maxima, a
 ## Installation
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/YuxiaoLi1234/MSz.git
+git clone --recursive https://github.com/YuxiaoLi1234/MSz.git
 cd MSz
 ```
 ### 2. Build the Program
