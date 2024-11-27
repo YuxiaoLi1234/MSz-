@@ -336,17 +336,19 @@ int main(int argc, char** argv){
     stream << std::defaultfloat << bound1;  
     std::string valueStr = stream.str();
     size2 = input_data1.size();
-    std::string cpfilename = "../compressed_"+filename+"_"+compressor_id+'_'+std::to_string(bound1)+".sz";
+    std::string cpfilename = "../compressed_"+filename+"_"+compressor_id+'_'+std::to_string(bound1)+".sz3";
     std::string decpfilename = "../decp_"+filename+"_"+compressor_id+'_'+std::to_string(bound1)+".bin";
     std::string fix_path = "../fixed_decp_"+filename+"_"+compressor_id+'_'+std::to_string(bound1)+".bin";
     std::string command;
     cout<<decpfilename<<endl;
     cout<<bound1<<", "<<std::to_string(bound1)<<endl;
-    
+   
     int result;
     if(compressor_id=="sz3"){
-        
-        command = "sz3 -i " + inputfilename + " -z " + cpfilename +" -o "+decpfilename + " -d " + " -1 " + std::to_string(size2)+" -M "+"REL "+std::to_string(range)+" -a";
+        // compress the datafirst
+        // command = "sz3 -d -i" + config_filename + " -i "+ inputfilename + " -o " + cpfilename
+        command = "sz3 -i " + inputfilename + " -z " + cpfilename +" -o "+decpfilename + " -d " + " -3 " + std::to_string(width1) + " " + std::to_string(height1) + " " +std::to_string(depth1)+" -M "+"REL "+std::to_string(range)+" -a";
+        // command = "sz3 -d -i " + inputfilename + " -z " + cpfilename + " -3 " + std::to_string(width1) + " " + std::to_string(height1) + " " +std::to_string(depth1) +" -M "+"REL "+std::to_string(range)+" -a";
         std::cout << "Executing command: " << command << std::endl;
         result = std::system(command.c_str());
         if (result == 0) {
@@ -354,6 +356,7 @@ int main(int argc, char** argv){
         } else {
             std::cout << "Compression failed." << std::endl;
         }
+
     }
     else if(compressor_id=="zfp"){
         cpfilename = "compressed_"+filename+"_"+std::to_string(bound1)+".zfp";
@@ -421,16 +424,17 @@ int main(int argc, char** argv){
     for (int i=0;i<input_data1.size();i++){
         
         if (decp_data_copy[i]!=decp_data1[i]){
+            if(abs(input_data1[i] - decp_data1[i]) > bound1) cout<<"wrong!"<<endl;
             indexs.push_back(i);
             edits.push_back(decp_data1[i]-decp_data_copy[i]);
             cnt++;
         }
     }
     std::vector<int> diffs; 
-    std::string indexfilename = "../index_"+filename+".bin";
-    std::string editsfilename = "../edits_"+filename+".bin";
-    std::string compressedindex = "../index_"+filename+".bin.zst";
-    std::string compressededits = "../edits_"+filename+".bin.zst";
+    std::string indexfilename = "index_"+filename+".bin";
+    std::string editsfilename = "edits_"+filename+".bin";
+    std::string compressedindex = "index_"+filename+".bin.zst";
+    std::string compressededits = "edits_"+filename+".bin.zst";
     
     if (!indexs.empty()) {
         diffs.push_back(indexs[0]);
@@ -484,7 +488,7 @@ int main(int argc, char** argv){
     double psnr = calculatePSNR(input_data1, decp_data_copy, maxValue-minValue);
     double fixed_psnr = calculatePSNR(input_data1, decp_data1, maxValue-minValue);
 
-    std::ofstream outFile3("../result_"+filename+"_"+compressor_id+"_detailed.txt", std::ios::app);
+    std::ofstream outFile3("../result/result_"+filename+"_"+compressor_id+"_detailed.txt", std::ios::app);
 
     
     if (!outFile3) {
@@ -496,11 +500,12 @@ int main(int argc, char** argv){
     outFile3 << std::to_string(bound1)<<":" << std::endl;
     outFile3 << std::setprecision(17)<< "related_error: "<<range << std::endl;
     outFile3 << std::setprecision(17)<< "Overall Compression Ratio: "<<overall_ratio << std::endl;
-    outFile3 << std::setprecision(17)<<"Original Compression Ratio: "<<original_dataSize/compressed_dataSize << std::endl;
-    outFile3 << std::setprecision(17)<<"Overall Bitrate: "<<bitRate << std::endl;
-    outFile3 << std::setprecision(17)<<"Original Bitrate: "<< (compressed_dataSize*8)/size2 << std::endl;
-    outFile3 << std::setprecision(17)<<"Original PSNR: "<<psnr << std::endl;
+    outFile3 << std::setprecision(17)<< "Original Compression Ratio: "<<original_dataSize/compressed_dataSize << std::endl;
+    outFile3 << std::setprecision(17)<< "Overall Bitrate: "<<bitRate << std::endl;
+    outFile3 << std::setprecision(17)<< "Original Bitrate: "<< (compressed_dataSize*8)/size2 << std::endl;
     outFile3 << std::setprecision(17)<<"After Preservation PSNR: "<<fixed_psnr << std::endl;
+    outFile3 << std::setprecision(17)<<"Original PSNR: "<<psnr << std::endl;
+    
     
 
     // outFile3 << std::setprecision(17)<<"right_labeled_ratio: "<<right_labeled_ratio << std::endl;
