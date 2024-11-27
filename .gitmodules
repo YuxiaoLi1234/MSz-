@@ -1,0 +1,9 @@
+[submodule "external/SZ3"]
+	path = external/SZ3
+	url = https://github.com/szcompressor/SZ3.git
+[submodule "external/zfp"]
+	path = external/zfp
+	url = https://github.com/LLNL/zfp.git
+[submodule "external/zstd"]
+	path = external/zstd
+	url = https://github.com/facebook/zstd.git
