@@ -32,7 +32,24 @@ using std::endl;
 
 __device__ double* decp_data;
 __device__ double* decp_data_copy ;
-__device__ int directions1[36] =  {0,1,0,0,-1,0,1,0,0,-1,0,0,-1,1,0,1,-1,0,0,0, -1,  0,-1, 1, 0,0, 1,  0,1, -1,  -1,0, 1,   1, 0,-1};
+
+
+__device__ int directions1[78] = {
+    1, 0, 0, -1, 0, 0,   
+    0, 1, 0, 0, -1, 0,
+    0, 0, 1, 0, 0, -1,
+    1, 1, 0, 1, -1, 0,  
+    -1, 1, 0, -1, -1, 0,
+    1, 0, 1, 1, 0, -1,
+    -1, 0, 1, -1, 0, -1,
+    0, 1, 1, 0, 1, -1,
+    0, -1, 1, 0, -1, -1,
+    1, 1, 1, 1, 1, -1,  
+    1, -1, 1, 1, -1, -1,
+    -1, 1, 1, -1, 1, -1,
+    -1, -1, 1, -1, -1, -1
+};
+
 __device__ int width;
 __device__ int height;
 __device__ int depth;
@@ -68,81 +85,28 @@ __device__ int* de_direction_as;
 __device__ int* de_direction_ds;
 __device__ int maxNeighbors = 12;
 
-__device__ int direction_to_index_mapping[12][3] = {{0,1,0},{0,-1,0},{1,0,0},{-1,0,0},{-1,1,0},{1,-1,0},{0,0, -1},  {0,-1, 1}, {0,0, 1},  {0,1, -1},  {-1,0, 1},   {1, 0,-1}};   
+__device__ int direction_to_index_mapping[26][3] = 
+{
+    {1, 0, 0}, {-1, 0, 0},   
+    {0, 1, 0}, {0, -1, 0},
+    {0, 0, 1}, {0, 0, -1},
+    {1, 1, 0}, {1, -1, 0},  
+   { -1, 1, 0}, {-1, -1, 0},
+    {1, 0, 1}, {1, 0, -1},
+{-1, 0, 1}, {-1, 0, -1},
+    {0, 1, 1}, {0, 1, -1},
+    {0, -1, 1}, {0, -1, -1},
+    {1, 1, 1}, {1, 1, -1},  
+    {1, -1, 1}, {1, -1, -1},
+    {-1, 1, 1}, {-1, 1, -1},
+    {-1, -1, 1}, {-1, -1, -1}
+
+};   
 
 
-
-template<typename T>
-class LockFreeStack {
-public:
-
-    __device__ void push(const T& value) {
-        Node* new_node = (Node*)malloc(sizeof(Node));
-        new_node->value = value;
-        Node* old_head = head;
-        do {
-            new_node->next = old_head;
-        } while (atomicCAS(reinterpret_cast<unsigned long long*>(&head),
-                           reinterpret_cast<unsigned long long>(old_head),
-                           reinterpret_cast<unsigned long long>(new_node)) !=
-                 reinterpret_cast<unsigned long long>(old_head));
-        
-    }
-
-    __device__ bool pop(T& value) {
-        Node* old_head = head;
-        if (old_head == nullptr) {
-            return false;
-        }
-        Node* new_head;
-        do {
-            new_head = old_head->next;
-        } while (atomicCAS(reinterpret_cast<unsigned long long*>(&head),
-                           reinterpret_cast<unsigned long long>(old_head),
-                           reinterpret_cast<unsigned long long>(new_head)) !=
-                 reinterpret_cast<unsigned long long>(old_head));
-        value = old_head->value;
-        free(old_head);
-        return true;
-    }
-    __device__ void clear() {
-        Node* current = head;
-        while (current != nullptr) {
-            Node* next = current->next;
-            delete current;
-            current = next;
-        }
-        head = nullptr;
-    }
-    __device__ int size() const {
-        int count = 0;
-        Node* current = head;
-        while (current != nullptr) {
-            count++;
-            
-            current = current->next;
-        }
-        return count;
-    }
-
-    __device__ bool isEmpty() const {
-        return head == nullptr;
-    }
-
-private:
-    struct Node {
-        T value;
-        Node* next;
-    };
-
-    Node* head = nullptr;
-};
-
-__device__ LockFreeStack<double> d_stacks;
-__device__ LockFreeStack<int> id_stacks;
 __device__ int getDirection(int x, int y, int z){
     
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 0; i < maxNeighbors; ++i) {
         if (direction_to_index_mapping[i][0] == x && direction_to_index_mapping[i][1] == y && direction_to_index_mapping[i][2] == z) {
             return i+1;  
         }
@@ -160,7 +124,7 @@ __device__ int from_direction_to_index1(int cur, int direc){
     int y = (cur / width) % height;
     int z = (cur/(width * height))%depth;
     
-    if (direc >= 1 && direc <= 12) {
+    if (direc >= 1 && direc <= maxNeighbors) {
         int delta_row = direction_to_index_mapping[direc-1][0];
         int delta_col = direction_to_index_mapping[direc-1][1];
         int delta_dep = direction_to_index_mapping[direc-1][2];
@@ -177,105 +141,6 @@ __device__ int from_direction_to_index1(int cur, int direc){
     }
     // return 0;
 };
-
-
-
-__global__ void copy_array_to_stack(int* index_array, double* edit_array, int size) {
-    if (threadIdx.x == 0) {
-        for (int i = 0; i < size; i++) {
-            // id_stacks.push(index_array[i]);
-            // d_stacks.push(edit_array[i]);
-        }
-    }
-}
-
-__device__ void find_direction2 (int type, int index){
-    double *data;
-    int *direction_as;
-    int *direction_ds;
-    if(type==0){
-        data = decp_data;
-        direction_as = de_direction_as;
-        direction_ds = de_direction_ds;
-    }
-    else{
-        data = input_data;
-        direction_as = or_maxi;
-        direction_ds = or_mini;
-    }
-    
-    double mini = 0;
-    
-    
-    // std::vector<int> indexs = adjacency[index];
-    int largetst_index = index;
-    
-    
-        
-    for(int j =0;j<12;++j){
-        int i = adjacency[index*12+j];
-        
-        if(i==-1){
-            break;
-        }
-        if(lowgradientindices[i]==1){
-            continue;
-        }
-        if((data[i]>data[largetst_index] or (data[i]==data[largetst_index] and i>largetst_index))){
-            mini = data[i]-data[index];
-            
-            largetst_index = i;
-            // }
-            
-        };
-    };
-    int row_l = (largetst_index / (height)) % width;
-    int row_i = (index / (height)) % width;
-    
-    int col_diff = row_l - row_i;
-    int row_diff = (largetst_index % height) - (index % height);
-
-    int dep_diff = (largetst_index /(width * height))%depth - (index /(width * height))%depth;
-    direction_as[index] = getDirection(row_diff, col_diff,dep_diff);
-    
-    
-
-    mini = 0;
-    largetst_index = index;
-    for(int j =0;j<12;++j){
-        int i = adjacency[index*12+j];
-        
-        if(i==-1){
-            break;
-        }
-        if(lowgradientindices[i]==1){
-            continue;
-        }
-        
-        if((data[i]<data[largetst_index] or (data[i]==data[largetst_index] and i<largetst_index))){
-            mini = data[i]-data[index];
-            
-            largetst_index = i;
-
-            
-        };
-    };
-    
-    row_l = (largetst_index / (height)) % width;
-    row_i = (index / (height)) % width;
-    
-    col_diff = row_l - row_i;
-    row_diff = (largetst_index % height) - (index % height);
-
-    dep_diff = (largetst_index /(width * height))%depth - (index /(width * height))%depth;
-    
-    
-    direction_ds[index] = getDirection(row_diff, col_diff,dep_diff);
-    
-    
-    
-}
-
 
 __global__ void find_direction (int type=0){
     int index = threadIdx.x + blockIdx.x * blockDim.x;
@@ -297,15 +162,14 @@ __global__ void find_direction (int type=0){
         direction_ds = or_mini;
     }
     
-    double mini = 0;
         
         
     int largetst_index = index;
 
     
-        
-    for(int j =0;j<12;++j){
-        int i = adjacency[index*12+j];
+    double mini = 0;
+    for(int j =0;j<maxNeighbors;++j){
+        int i = adjacency[index*maxNeighbors+j];
         
         if(i==-1){
             continue;
@@ -357,8 +221,8 @@ __global__ void find_direction (int type=0){
 
     mini = 0;
     largetst_index = index;
-    for(int j =0;j<12;++j){
-        int i = adjacency[index*12+j];
+    for(int j =0;j<maxNeighbors;++j){
+        int i = adjacency[index*maxNeighbors+j];
         
         if(i==-1){
             break;
@@ -402,14 +266,6 @@ __global__ void find_direction (int type=0){
     return;
 
 };
-__global__ void checkElementKernel(int* array, int size, int target, bool* result) {
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx < size) {
-        if (array[idx] == target) {
-            *result = true;
-        }
-    }
-}
 
 __global__ void iscriticle(){
         
@@ -423,8 +279,8 @@ __global__ void iscriticle(){
         bool is_maxima = true;
         bool is_minima = true;
         
-        for (int index=0;index<12;index++) {
-            int j = adjacency[i*12+index];
+        for (int index=0;index<maxNeighbors;index++) {
+            int j = adjacency[i*maxNeighbors+index];
             if(j==-1){
                 break;
             }
@@ -444,8 +300,8 @@ __global__ void iscriticle(){
                 break;
             }
         }
-        for (int index=0;index< 12;index++) {
-            int j = adjacency[i*12+index];
+        for (int index=0;index< maxNeighbors;index++) {
+            int j = adjacency[i*maxNeighbors+index];
             if(j==-1){
                 break;
             }
@@ -509,24 +365,7 @@ __global__ void get_wrong_index_path1(){
     return;
 };
 
-__global__ void freeDeviceMemory() {
-    // 释放 decp_data 指向的内存
-    if (decp_data != nullptr) {
-        delete[] decp_data;
-        decp_data = nullptr;  // 避免野指针
-    }
-} 
-__global__ void freeDeviceMemory1() {
-    // 释放 decp_data 指向的内存
-    if (de_direction_as != nullptr) {
-        delete[] de_direction_as;
-        de_direction_as = nullptr;  // 避免野指针
-    }
-    if (de_direction_ds != nullptr) {
-        delete[] de_direction_ds;
-        de_direction_ds = nullptr;  // 避免野指针
-    }
-}
+
 __global__ void computeAdjacency() {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     
@@ -537,7 +376,7 @@ __global__ void computeAdjacency() {
         int z = (i / (width * height)) % depth;
         int neighborIdx = 0;
         
-        for (int d = 0; d < 12; d++) {
+        for (int d = 0; d < maxNeighbors; d++) {
             
             int dirX = directions1[d * 3];     
             int dirY = directions1[d * 3 + 1]; 
@@ -565,14 +404,6 @@ __global__ void computeAdjacency() {
     }
 }
 
-__device__ unsigned long long doubleToULL(double value) {
-    return *reinterpret_cast<unsigned long long*>(&value);
-}
-
-__device__ double ULLToDouble(unsigned long long value) {
-    return *reinterpret_cast<double*>(&value);
-}
-
 
 
 __device__ double atomicCASDouble(double* address, double val) {
@@ -588,39 +419,7 @@ __device__ double atomicCASDouble(double* address, double val) {
     old_val_as_ull = atomicCAS((unsigned long long int*)address_as_ull, (unsigned long long int)assumed, (unsigned long long int)new_val_as_ull);
     return __longlong_as_double(old_val_as_ull);
 }
-void saveVectorToBinFile(const std::vector<int>* vecPtr, const std::string& filename) {
-    if (vecPtr == nullptr) {
-        std::cerr << "pointer empty" << std::endl;
-        return;
-    }
 
-    
-    std::ofstream outfile(filename, std::ios::binary);
-    if (!outfile) {
-        std::cerr << "can not open file " << filename << " to write" << std::endl;
-        return;
-    }
-
-    
-    size_t size = vecPtr->size();
-    outfile.write(reinterpret_cast<const char*>(&size), sizeof(size));
-
-    
-    for (size_t i = 0; i < size; ++i) {
-        int value = (*vecPtr)[i];
-        if (value == -1) {
-            int index = static_cast<int>(i/2);
-            outfile.write(reinterpret_cast<const char*>(&index), sizeof(index));
-            
-        } else {
-            outfile.write(reinterpret_cast<const char*>(&value), sizeof(value));
-        }
-    }
-
-
-    
-    outfile.close();
-}
 __device__ int swap(int index, double delta){
     int update_successful = 0;
     double oldValue = d_deltaBuffer[index];
@@ -639,18 +438,6 @@ __device__ int swap(int index, double delta){
     }
     }
 }
-
-
-
-
-__global__ void clearStacksKernel(LockFreeStack<double> stacks) {
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx < num) {
-        stacks.clear();
-    }
-}
-
-
 
 __global__ void fix_maxi_critical1(int direction, int cnt){
     int index_f = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1045,26 +832,13 @@ __global__ void fix_maxi_critical1(int direction, int cnt){
 }
 
 
-
-__global__ void initializeKernel(double value) {
-    
-    if (threadIdx.x == 0) {
-        d_stacks.clear();
-        id_stacks.clear();
-    }
-
-
-}
-
 __global__ void initializeKernel1(double value) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if(tid<num){
-        d_deltaBuffer[tid] = -2000.0;
+        d_deltaBuffer[tid] = -2000.0 * bound;
     }
 
 }
-
-
 
 __global__ void fixpath11(int direction){
     int index_f = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1128,7 +902,7 @@ __global__ void fixpath11(int direction){
             int smallest_vertex = false_index;
             
             for(int j=0;j<12;j++){
-                int i = adjacency[12*false_index+j];
+                int i = adjacency[maxNeighbors*false_index+j];
                 if(i==-1) continue;
                 if(input_data[i]<input_data[false_index] and input_data[i]>threshold and i!=false_index){
                     smallest_vertex = i;
@@ -1141,8 +915,8 @@ __global__ void fixpath11(int direction){
             double threshold1 = DBL_MAX;;
             int smallest_vertex1 = true_index;
             
-            for(int j=0;j<12;j++){
-                int i = adjacency[12*true_index+j];
+            for(int j=0;j<maxNeighbors;j++){
+                int i = adjacency[maxNeighbors*true_index+j];
                 if(i==-1) continue;
                 if(input_data[i]>input_data[true_index] and input_data[i]<threshold1 and i!=true_index){
                     smallest_vertex1 = i;
@@ -1216,7 +990,7 @@ __global__ void fixpath11(int direction){
             
             else{
                
-                double diff = (bound-(input_data[false_index]-decp_data[false_index]))/2.0;
+                
                 
                 if (decp_data[false_index]>=decp_data[true_index]){
                     if(abs(input_data[false_index]-((decp_data[false_index]+input_data[true_index]-bound)/2.0))<=bound){
@@ -1271,6 +1045,8 @@ __global__ void fixpath11(int direction){
         while (or_mini[cur] == de_direction_ds[cur]){
             
             int next_vertex = from_direction_to_index1(cur,de_direction_ds[cur]);
+            
+            
             if (next_vertex == cur){
                 cur = next_vertex;
                 break;
@@ -1293,6 +1069,8 @@ __global__ void fixpath11(int direction){
 
             double d = ((input_data[true_index] - bound) + decp_data[true_index]) / 2.0 - decp_data[true_index];
             
+            
+
             
             // printf("%.17f %.17f %.17f %.17f\n", decp_data[next_vertex], decp_data[index], input_data[index] - bound, input_data[next_vertex] - bound);
             double oldValue = d_deltaBuffer[true_index];
@@ -1437,36 +1215,11 @@ __global__ void fixpath11(int direction){
     return;
 };
 
-__global__ void initialize2DArray(double** d_array, int* sizes, int rows) {
-    int row = blockIdx.x;
-    int col = threadIdx.x;
-
-    if (row < rows && col < sizes[row]) {
-        d_array[row][col] = row * 10 + col; // Example initialization
-    }
-}
-
-
-
-
-void resizeArray(double** d_array, int* sizes, int row, int new_size) {
-    double* d_subarray;
-    cudaMalloc(&d_subarray, new_size * sizeof(double));
-    cudaMemcpy(d_subarray, d_array[row], sizes[row] * sizeof(double), cudaMemcpyDeviceToDevice);
-    cudaFree(d_array[row]);
-    d_array[row] = d_subarray;
-    sizes[row] = new_size;
-}
-
-
-
-
-
 __global__ void applyDeltaBuffer1() {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     
     if (tid < num) {
-        if(d_deltaBuffer[tid] != -2000){
+        if(d_deltaBuffer[tid] != -2000 * bound){
             if(abs(d_deltaBuffer[tid]) > 1e-15) decp_data[tid] += d_deltaBuffer[tid];
             else decp_data[tid] = input_data[tid] - bound;
         }
@@ -1613,8 +1366,15 @@ __global__ void initializeWithIndex(int size, int type=0) {
     }
 }
 
+__global__ void change_mode(int neighbor_number)
+{
+    if(neighbor_number != 0)
+    {
+        maxNeighbors = 26;
+    }
+}
 
-void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,std::vector<int> *d,std::vector<double> *input_data1,std::vector<double> *decp_data1,std::vector<int>* dec_label1,std::vector<int>* or_label1, int width1, int height1, int depth1, std::vector<int> *low,double bound1,float &datatransfer,float &finddirection, int preserve_min, int preserve_max, int preserve_path){
+void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,std::vector<int> *d,std::vector<double> *input_data1,std::vector<double> *decp_data1,std::vector<int>* dec_label1,std::vector<int>* or_label1, int width1, int height1, int depth1, std::vector<int> *low,double bound1,float &datatransfer,float &finddirection, int preserve_min, int preserve_max, int preserve_path, int neighbor_number){
     int* temp;
     
     int* temp1;
@@ -1632,9 +1392,10 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
     float fixtime_cp = 0.0;
     double* temp3;
     double* temp4;
+    int max_n = 12;
+    if(neighbor_number!=0) max_n = 26;
     
-    LockFreeStack<double> stack_temp;
-    LockFreeStack<int> id_stack_temp;
+    
 
     std::vector<std::vector<float>> time_counter;
     int total_cnt;
@@ -1725,7 +1486,8 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
 
-    
+    change_mode<<<1,1>>>(neighbor_number);
+    cudaDeviceSynchronize();
     cudaEventElapsedTime(&elapsedTime, start, stop);
     datatransfer+=elapsedTime;
     
@@ -1807,7 +1569,7 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
     dim3 gridSize((num1 + blockSize.x - 1) / blockSize.x);
     
     int* tempDevicePtr = nullptr;
-    size_t arraySize = num1*12; 
+    size_t arraySize = num1*max_n; 
     cudaStatus = cudaMalloc(&tempDevicePtr, arraySize * sizeof(int));
     
     cudaStatus = cudaMemcpyToSymbol(adjacency, &tempDevicePtr, sizeof(tempDevicePtr));
@@ -1891,8 +1653,7 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
     int cnt  = 0;
     
     std::vector<int> h_all_max(num1);
-    int h_count_f_max = 0;
-    
+
     if(preserve_max == 0) host_count_f_max = 0;
     if(preserve_min == 0) host_count_f_min = 0;
     
@@ -1909,8 +1670,7 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
             
             dim3 gridSize1((host_count_f_max + blockSize1.x - 1) / blockSize1.x);
             cudaEventRecord(start, 0);
-            int threads_per_block = 256;
-            int num_blocks = (num1+threads_per_block-1)/threads_per_block;
+            
             cudaEventRecord(start, 0);
             if(preserve_max == 1)
             {
@@ -2017,8 +1777,7 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
     cudaMemcpy(dec_label1->data(), dec_l, num1 * sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(or_label1->data(), or_l, num1 * sizeof(int), cudaMemcpyDeviceToHost);
     
-    saveVectorToBinFile(dec_label1, "dec_jet_"+std::to_string(bound)+".bin");
-    saveVectorToBinFile(or_label1, "or_jet_"+std::to_string(bound)+".bin");
+    
     
     cudaMemcpyToSymbol(count_p_max, &initialValue, sizeof(int));
     cudaMemcpyToSymbol(count_p_min, &initialValue, sizeof(int));
@@ -2275,391 +2034,3 @@ void init_inputdata(std::vector<int> *a,std::vector<int> *b,std::vector<int> *c,
 
     return;
 }
-__global__ void copyDeviceVarToDeviceMem(int *deviceMem,int *deviceMem1) {
-    if (threadIdx.x == 0) {  
-        *deviceMem = *de_direction_as;
-        *deviceMem1 = *de_direction_ds;
-    }
-}
-
-
-
-
-void fix_process(std::vector<int> *c,std::vector<int> *d,std::vector<double> *decp_data1,float &datatransfer, float &finddirection, float &getfcp, float &fixtime_cp, int &cpite){
-    auto total_start2 = std::chrono::high_resolution_clock::now();
-    int num1;
-    cudaMemcpyFromSymbol(&num1, num, sizeof(int), 0, cudaMemcpyDeviceToHost);
-    
-    double* temp5;
-    float elapsedTime;
-    
-    cudaEvent_t start, stop;
-    
-    cudaEventCreate(&start);
-    
-    cudaEventCreate(&stop);
-    cudaEventRecord(start, 0);
-    // memory for deltaBuffer
-    double* d_deltaBuffer;
-    cudaMalloc(&d_deltaBuffer, num1 * sizeof(double));
-    // initialization of deltaBuffer
-    cudaMemset(d_deltaBuffer, 0.0, num1 * sizeof(double));
-    cudaError_t cudaStatus = cudaMalloc((void**)&temp5, num1 * sizeof(double));
-    
-    cudaStatus = cudaMemcpy(temp5, decp_data1->data(), num1 * sizeof(double), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-            std::cerr << "cudaMemcpyToSymbol failed7: " << cudaGetErrorString(cudaStatus) << std::endl;
-    }
-    
-    
-    cudaStatus = cudaMemcpyToSymbol(decp_data, &temp5, sizeof(double*));
-    if (cudaStatus != cudaSuccess) {
-            std::cerr << "cudaMemcpyToSymbol failed73: " << cudaGetErrorString(cudaStatus) << std::endl;
-    }
-   
-    
-    
-    
-    
-
-    cudaDeviceSynchronize();
-    
-
-    
-    
-    int* hostArray;
-    cudaStatus = cudaMalloc((void**)&hostArray, num1 * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-            std::cerr << "cudaMemcpyToSymbol failed70: " << cudaGetErrorString(cudaStatus) << std::endl;
-        }
-    
-   
-    cudaMemcpyToSymbol(de_direction_as, &hostArray, sizeof(int*));
-    
-    int* hostArray1;
-
-    
-    cudaStatus = cudaMalloc((void**)&hostArray1, num1 * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-            std::cerr << "cudaMemcpyToSymbol failed71: " << cudaGetErrorString(cudaStatus) << std::endl;
-        }
-    cudaStatus =  cudaMemcpyToSymbol(de_direction_ds, &hostArray1, sizeof(int*));
-    if (cudaStatus != cudaSuccess) {
-            std::cerr << "cudaMemcpyToSymbol failed72: " << cudaGetErrorString(cudaStatus) << std::endl;
-    }
-    
-    cudaDeviceSynchronize();
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    
-    cudaEventElapsedTime(&elapsedTime, start, stop);
-    datatransfer+=elapsedTime;
-
-    dim3 blockSize(256);
-    dim3 gridSize((num1 + blockSize.x - 1) / blockSize.x);
-    cudaEventRecord(start, 0);
-
-    find_direction<<<gridSize,blockSize>>>();
-    
-    cudaDeviceSynchronize();
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    
-    cudaEventElapsedTime(&elapsedTime, start, stop);
-    // cout<<"1000次finddirection:"<<elapsedTime<<endl;
-    
-    finddirection+=elapsedTime;
-
-    cudaEventRecord(start, 0);
-    
-    iscriticle<<<gridSize,blockSize>>>();
-    
-    
-    
-    cudaDeviceSynchronize();
-
-    cudaDeviceSynchronize();
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    
-    cudaEventElapsedTime(&elapsedTime, start, stop);
-    // cout<<"100cigetfcp: "<<elapsedTime;
-    getfcp+=elapsedTime;
-    
-    
-    int host_count_f_max;
-    cudaStatus = cudaMemcpyFromSymbol(&host_count_f_max, count_f_max, sizeof(int), 0, cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        std::cerr << "cudaMemcpyToSymbol failed11: " << cudaGetErrorString(cudaStatus) << std::endl;
-    }
-    int host_count_f_min;
-    cudaStatus = cudaMemcpyFromSymbol(&host_count_f_min, count_f_min, sizeof(int), 0, cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-            std::cerr << "cudaMemcpyToSymbol failed12: " << cudaGetErrorString(cudaStatus) << std::endl;
-    }
-
-    while(host_count_f_max>0 or host_count_f_min>0){
-        
-        // cout<<host_count_f_max<<", "<<host_count_f_min<<endl;
-
-        cpite+=1;
-        dim3 blockSize1(256);
-        dim3 gridSize1((host_count_f_max + blockSize1.x - 1) / blockSize1.x);
-        // cudaEventRecord(start, 0);
-        cudaEventRecord(start, 0);
-        // fix_maxi_critical1<<<gridSize1, blockSize1>>>(0,d_deltaBuffer,id_array);
-        
-        // cudaDeviceSynchronize();
-
-        dim3 blocknum(256);
-        dim3 gridnum((host_count_f_min + blocknum.x - 1) / blocknum.x);
-        
-        
-        //fix_maxi_critical1<<<gridnum, blocknum>>>(1,d_deltaBuffer,id_array);
-        // cout<<"wanc"<<endl;
-        cudaDeviceSynchronize();
-        
-        cudaEventRecord(stop, 0);
-        cudaEventSynchronize(stop);
-
-        
-        cudaEventElapsedTime(&elapsedTime, start, stop);
-        fixtime_cp+=elapsedTime;
-        
-        int initialValue = 0;
-        cudaStatus = cudaMemcpyToSymbol(count_f_max, &initialValue, sizeof(int));
-        // if (cudaStatus != cudaSuccess) {
-        //     std::cerr << "cudaMemcpyToSymbol failed4: " << cudaGetErrorString(cudaStatus) << std::endl;
-        // }
-        // int initialValue = 0;
-        cudaStatus = cudaMemcpyToSymbol(count_f_min, &initialValue, sizeof(int));
-
-        // if (cudaStatus != cudaSuccess) {
-         //     std::cerr << "cudaMemcpyToSymbol failed5: " << cudaGetErrorString(cudaStatus) << std::endl;
-        // }
-        
-        // std::cout << "Average Time Per Iteration = " << elapsedTime << " ms" << std::endl;
-        cudaEventRecord(start, 0);
-
-        iscriticle<<<gridSize, blockSize>>>();
-        cudaEventRecord(stop, 0);
-        cudaEventSynchronize(stop);
-
-        
-        cudaEventElapsedTime(&elapsedTime, start, stop);
-        getfcp+=elapsedTime;
-
-        cudaEventRecord(start, 0);
-        find_direction<<<gridSize,blockSize>>>();
-        
-        cudaEventRecord(stop, 0);
-        cudaEventSynchronize(stop);
-        cudaEventElapsedTime(&elapsedTime, start, stop);
-        finddirection+=elapsedTime;
-        
-        
-        
-        cudaMemcpyFromSymbol(&host_count_f_max, count_f_max, sizeof(int), 0, cudaMemcpyDeviceToHost);
-        
-        cudaMemcpyFromSymbol(&host_count_f_min, count_f_min, sizeof(int), 0, cudaMemcpyDeviceToHost);
-        // cout<<host_count_f_max<<", "<<host_count_f_min<<endl;
-        cudaDeviceSynchronize();
-        
-        // exit(0);
-    }
-    // cudaEventRecord(stop, 0);
-    // cudaEventSynchronize(stop);
-    
-    cudaEventRecord(start, 0);
-    find_direction<<<gridSize,blockSize>>>();
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&elapsedTime, start, stop);
-    // finddirection1+=elapsedTime;
-    // cudaEventElapsedTime(&wholeTime, start1, stop);
-    // cout<<"["<<totalElapsedTime/wholeTime<<", "<<totalElapsedTime_fcp/wholeTime<<", "<<totalElapsedTime_fd/wholeTime<<"],"<<endl;;
-    // start2 = std::chrono::high_resolution_clock::now();
-    cudaEventRecord(start, 0);
-    cudaStatus = cudaMemcpy(decp_data1->data(), temp5, num1 * sizeof(double), cudaMemcpyDeviceToHost);
-    
-
-    
-
-
-    
-
-    
-    // cudaMemcpy(hostArray1, de_direction_ds, num1 * sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(c->data(), hostArray, num1 * sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(d->data(), hostArray1, num1 * sizeof(int), cudaMemcpyDeviceToHost);
-    //cudaMemcpy(decp_data1->data(), temp4, num1 * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&elapsedTime, start, stop);
-    datatransfer+=elapsedTime;
-    
-    cudaDeviceSynchronize();
-    
-    
-    cudaFree(temp5);
-    cudaFree(hostArray);
-    cudaFree(hostArray1);
-    
-    
-    
-   
-    
-
-    return;
-    
-}
-
-__global__ void copyDeviceToArray(int* hostArray,int* hostArray1) {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index < num) {
-        
-        hostArray[index] = de_direction_as[index];
-        
-        hostArray1[index] = de_direction_ds[index];
-    }
-    
-}
-
-
-
-void mappath1(std::vector<int> *label, std::vector<int> *direction_as, std::vector<int> *direction_ds, float &finddirection, float &mappath_path, float &datatransfer,int type=0){
-    int num1;
-    cudaMemcpyFromSymbol(&num1, num, sizeof(int), 0, cudaMemcpyDeviceToHost);
-    
-    int *un_sign_as;
-    cudaMalloc((void**)&un_sign_as, sizeof(int));
-    cudaMemset(un_sign_as, 0, sizeof(int));
-
-    int *un_sign_ds;
-    cudaMalloc((void**)&un_sign_ds, sizeof(int));
-    cudaMemset(un_sign_ds, 0, sizeof(int));
-
-    
-    
-    
-    dim3 blockSize1(256);
-    dim3 gridSize1((num1 + blockSize1.x - 1) / blockSize1.x);
-
-    float elapsedTime;
-    
-    cudaEvent_t start, stop;
-
-    cudaEventCreate(&start);
-    
-    cudaEventCreate(&stop);
-    cudaEventRecord(start, 0);
-    
-    int* label_temp;
-    cudaError_t cudaStatus = cudaMalloc((void**)&label_temp, num1*2 * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-            std::cerr << "cudaMemcpyToSymbol failed60: " << cudaGetErrorString(cudaStatus) << std::endl;
-    }
-    
-    
-    
-    int h_un_sign_as = num1;
-    int h_un_sign_ds = num1;
-    // int *un_sign_as = 0;
-    // int *un_sign_ds = 0;
-    int* hostArray;
-    cudaStatus = cudaMalloc((void**)&hostArray, num1 * sizeof(int));
-    
-    // cudaMemcpy(decp_data1->data(), temp5, num1 * sizeof(double), cudaMemcpyDeviceToHost);
-    
-    cudaStatus = cudaMemcpy(hostArray,direction_as->data(), num1 * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-            std::cerr << "cudaMemcpyToSymbol failed76: " << cudaGetErrorString(cudaStatus) << std::endl;
-    }
-
-    int* hostArray1;
-    cudaStatus = cudaMalloc((void**)&hostArray1, num1 * sizeof(int));
-    cudaStatus = cudaMemcpy(hostArray1,direction_ds->data(),  num1 * sizeof(int), cudaMemcpyHostToDevice);
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&elapsedTime, start, stop);
-    datatransfer+=elapsedTime;
-
-    if (cudaStatus != cudaSuccess) {
-        std::cerr << "cudaMemcpyToSymbol failed78: " << cudaGetErrorString(cudaStatus) << std::endl;
-    }
-    if(type==0){
-        
-        cudaEventRecord(start, 0);
-        cudaMemcpyToSymbol(de_direction_as, &hostArray, sizeof(int*));
-        
-        
-        cudaStatus =  cudaMemcpyToSymbol(de_direction_ds, &hostArray1, sizeof(int*));
-        if (cudaStatus != cudaSuccess) {
-                std::cerr << "cudaMemcpyToSymbol failed72: " << cudaGetErrorString(cudaStatus) << std::endl;
-        }
-        
-        cudaEventRecord(stop, 0);
-        cudaEventSynchronize(stop);
-        cudaEventElapsedTime(&elapsedTime, start, stop);
-        datatransfer+=elapsedTime;
-        
-    }
-    cudaEventRecord(start, 0);
-    
-    initializeWithIndex<<<gridSize1, blockSize1>>>(num1,type);
-    cudaDeviceSynchronize();
-    
-    
-    while(h_un_sign_as>0 or h_un_sign_ds>0){
-        
-        int zero = 0;
-        int zero1 = 0;
-
-       
-        cudaMemcpy(un_sign_as, &zero, sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(un_sign_ds, &zero1, sizeof(int), cudaMemcpyHostToDevice);
-        getlabel<<<gridSize1,blockSize1>>>(un_sign_as,un_sign_ds,0);
-        
-        cudaMemcpy(&h_un_sign_as, un_sign_as, sizeof(int), cudaMemcpyDeviceToHost);
-        cudaMemcpy(&h_un_sign_ds, un_sign_ds, sizeof(int), cudaMemcpyDeviceToHost);
-       
-        
-        
-    }   
-        
-
-
-    //     cudaDeviceSynchronize();
-    // }
-    cudaDeviceSynchronize();
-    
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&elapsedTime, start, stop);
-    
-    mappath_path+=elapsedTime;
-
-    cudaEventRecord(start, 0);
-    cudaStatus = cudaMemcpy(label->data(), label_temp, num1 *2 * sizeof(int), cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&elapsedTime, start, stop);
-    datatransfer+=elapsedTime;
-    if (cudaStatus != cudaSuccess) {
-            std::cerr << "cudaMemcpyToSymbol failed61: " << cudaGetErrorString(cudaStatus) << std::endl;
-    }
-    if(type==0){
-        cudaFree(label_temp);
-        
-    }
-    
-    cudaFree(hostArray1);
-    cudaFree(hostArray);
-    
-    
-    return;
-};
