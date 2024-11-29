@@ -2,6 +2,7 @@
 #include "cublas_v2.h"
 #include <cuda_runtime.h>
 #include "device_launch_parameters.h"
+
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -252,6 +253,17 @@ void print_help(const std::string& program_name) {
               << "  " << program_name << " path/to/your/data.bin,256,256,128 0.01 sz3 1 0 1 0\n";
 }
 
+std::string extractFilename(const std::string& path) {
+    
+    size_t lastSlash = path.find_last_of("/\\");
+    std::string filename = (lastSlash == std::string::npos) ? path : path.substr(lastSlash + 1);
+
+    size_t dotPos = filename.find_last_of('.');
+    std::string name = (dotPos == std::string::npos) ? filename : filename.substr(0, dotPos);
+
+    return name;
+}
+
 int main(int argc, char** argv){
 
     if (argc < 2) {
@@ -298,7 +310,7 @@ int main(int argc, char** argv){
         if (iss >> width1 >> delimiter && delimiter == ',' &&
             iss >> height1 >> delimiter && delimiter == ',' &&
             iss >> depth1) {
-            std::cout << "Filename: " << file_path << std::endl;
+            std::cout << "Filepath: " << file_path << std::endl;
             std::cout << "Width: " << width1 << std::endl;
             std::cout << "Height: " << height1 << std::endl;
             std::cout << "Depth: " << depth1 << std::endl;
@@ -309,16 +321,11 @@ int main(int argc, char** argv){
         std::cerr << "Parsing error for file" << std::endl;
     }
 
-    std::filesystem::path path(file_path);
-    filename = path.stem().string();
+    
+    filename = extractFilename(file_path);
     std::cout << "Extracted file name: " << filename<< std::endl;
     
-    inputfilename = file_path + ".bin";
-    
-    
-
-    
-    
+    inputfilename = file_path;
     
     auto start = std::chrono::high_resolution_clock::now();
     input_data1 = getdata2(inputfilename);
@@ -327,6 +334,9 @@ int main(int argc, char** argv){
     double minValue = *min_it;
     double maxValue = *max_it;
     bound1 = (maxValue-minValue)*range;
+    
+    
+
     
     
     std::ostringstream stream;
@@ -355,6 +365,7 @@ int main(int argc, char** argv){
             std::cout << "Compression successful." << std::endl;
         } else {
             std::cout << "Compression failed." << std::endl;
+            exit(0);
         }
 
     }
