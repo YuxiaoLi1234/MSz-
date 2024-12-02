@@ -70,7 +70,6 @@ __device__ int count_p_max;
 __device__ int count_p_min;
 __device__ int* maxi;
 
-__device__ int* mini;
 __device__ double bound;
 __device__ int edit_count;
 __device__ int* or_maxi;
@@ -167,7 +166,6 @@ __global__ void find_direction (int type=0){
     int largetst_index = index;
 
     
-    double mini = 0;
     for(int j =0;j<maxNeighbors;++j){
         int i = adjacency[index*maxNeighbors+j];
         
@@ -178,7 +176,6 @@ __global__ void find_direction (int type=0){
             continue;
         }
         if((data[i]>data[largetst_index] or (data[i]==data[largetst_index] and i>largetst_index))){
-            mini = data[i]-data[index];
             
             largetst_index = i;
             // }
@@ -219,7 +216,6 @@ __global__ void find_direction (int type=0){
     
     
 
-    mini = 0;
     largetst_index = index;
     for(int j =0;j<maxNeighbors;++j){
         int i = adjacency[index*maxNeighbors+j];
@@ -235,7 +231,6 @@ __global__ void find_direction (int type=0){
         //     // cout<<data[i]<<", "<<data[index]<<", "<<data[8057]<<endl;
         // }
         if((data[i]<data[largetst_index] or (data[i]==data[largetst_index] and i<largetst_index))){
-            mini = data[i]-data[index];
             
             largetst_index = i;
 
