@@ -5,6 +5,7 @@ MSz is designed to preserve topological features such as local minima, maxima, a
 ## Requirements
 - C++17 or later
 - CMake 3.18 or later
+- CUDA
 - SZ3, ZFP and ZSTD libraries (if using these compression methods)
 
 ## Installation
